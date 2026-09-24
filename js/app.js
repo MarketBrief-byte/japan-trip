@@ -206,7 +206,7 @@ const PLACES = {
   ],
 };
 
-const AGE_LABEL = { 1: '10대', 2: '20대', 3: '30대', 4: '40대' };
+const AGE_LABEL = { 1: '10대', 2: '20대', 3: '30대', 4: '40대', 5: '50대 이상' };
 const WITH_LABEL = { s: '혼자', f: '친구와', a: '가족과' };
 
 const TIPS = {
@@ -2229,6 +2229,201 @@ if (typeof RESERVATIONS !== 'undefined') {
 }
 
 ;
+/* ===== prefs.js ===== */
+/*
+ * 여행자 프로필 · 취향
+ *   TASTES        : 취향 선택지 (여러 개 고를 수 있음)
+ *   TASTE_WORDS   : 직접 입력에서 취향을 알아듣는 말
+ *   THEME_RULES   : 장소 이름·설명·카테고리로 취향 분류를 붙이는 규칙
+ *   THEME_EXTRA   : 규칙으로 못 잡는 장소의 취향 분류 (id → 목록)
+ *   SMALL_SEATS   : 1인석·카운터 위주라 4명 이상 일행에는 불편한 곳
+ *   parseTravelers: "25살 여자 3명", "50대 엄마랑 7살 아이" 같은 문장 → 연령대·성별·인원·동행
+ *
+ * 근거: 구글·타베로그는 성별·연령별 평점을 따로 공개하지 않는다. 그래서 한국 여행 커뮤니티·블로그에서
+ * 누가 많이 추천하는지(20대 여성 카페·사진 명소, 가족 테마파크·수족관, 친구 여럿이 야키니쿠·이자카야 등)
+ * 경향을 취향 분류와 가중치로 옮겼다. 취향을 직접 고르면 그 선택이 가장 크게 반영된다.
+ */
+
+const TASTES = [
+  { id: 'food', label: '맛집·먹방' },
+  { id: 'shopping', label: '쇼핑' },
+  { id: 'history', label: '역사·문화' },
+  { id: 'nature', label: '자연·공원' },
+  { id: 'night', label: '야경·전망' },
+  { id: 'theme', label: '테마파크' },
+  { id: 'onsen', label: '온천·휴식' },
+  { id: 'anime', label: '애니·캐릭터' },
+  { id: 'cafe', label: '카페·디저트' },
+  { id: 'photo', label: '사진 명소' },
+  { id: 'drink', label: '술·이자카야' },
+];
+
+const TASTE_WORDS = {
+  food: ['맛집', '먹방', '먹거리', '미식', '식도락', '먹으러', '먹는'],
+  shopping: ['쇼핑', '빈티지', '구제', '백화점', '아울렛', '편집숍', '옷', '명품', '돈키', '드럭스토어', '기념품'],
+  history: ['역사', '전통', '신사', '사찰', '박물관', '미술관', '전시', '성곽', '기모노', '문화', '고즈넉'],
+  nature: ['자연', '공원', '산책', '바다', '꽃', '힐링', '등산', '정원', '단풍', '벚꽃'],
+  night: ['야경', '전망', '전망대', '밤', '타워', '일루미'],
+  theme: ['테마파크', '놀이공원', '디즈니', '유니버설', 'usj', '유니버셜', '롤러코스터', '놀이기구'],
+  onsen: ['온천', '료칸', '휴식', '쉬는', '사우나', '스파', '여유', '느긋', '조용'],
+  anime: ['애니', '캐릭터', '포켓몬', '지브리', '피규어', '만화', '게임', '덕질', '굿즈', '산리오', '닌텐도', '짱구'],
+  cafe: ['카페', '디저트', '빵', '케이크', '커피', '브런치', '말차'],
+  photo: ['사진', '인생샷', '포토', '인스타', '감성'],
+  drink: ['술', '이자카야', '술집', '맥주', '하이볼', '사케', '위스키', '바 ', '혼술', '포차', '선술집'],
+};
+
+// [취향, 장소 이름·설명·지역에서 찾을 말, 카테고리(tags)]
+const THEME_RULES = [
+  ['food', /먹거리|시장|야타이|포장마차|먹방|꼬치|먹자골목|길거리 음식|푸드/, []],
+  ['shopping', /쇼핑|백화점|아울렛|편집숍|빈티지|구제|상점가|돈키|쇼핑몰|패션|잡화|소품|브랜드|면세|드럭/, ['shopping', 'donki', 'drugstore']],
+  ['history', /신사|神社|사원|사찰|(?:^|[\s·(])[가-힣]{1,3}사(?=[\s·()]|$)|寺|천수각|[가-힣]{1,4}성(?=[\s·(]|$)|城|도리이|대불|전통|기모노|역사|고택|유적|옛 거리|옛거리|다이묘|에도 시대|메이지|신궁|미술관|박물관|과학관|전시|문화관|운하/, []],
+  ['nature', /공원|정원|숲|바다|해변|호수|강변|꽃|라벤더|단풍|벚꽃|섬(?=[\s·()]|$)|계곡|폭포|해안|목장|농장|산책|언덕|동물원|수족관|[가-힣]산(?=[\s·()]|$)|로프웨이|해수욕/, []],
+  ['night', /야경|전망|타워|스카이|일루미|조명|夜景|展望/, ['view']],
+  ['theme', /디즈니|유니버설|테마파크|놀이공원|유원지|레고랜드|하모니랜드|지브리 ?파크|어뮤즈먼트/, []],
+  ['onsen', /온천|료칸|사우나|스파|족욕|목욕|대욕장|温泉/, ['sento_onsen']],
+  ['anime', /애니|포켓몬|지브리|만화|게임|피규어|닌텐도|캐릭터|산리오|건담|코난|슬램덩크|원피스|짱구|키티|마리오|점프|가챠|성지/, ['character']],
+  ['cafe', /카페|디저트|크레페|파르페|케이크|빵|베이커리|말차|소프트크림|푸딩|아이스크림|스위츠|커피/, ['cafe', 'dessert']],
+  ['photo', /사진|포토|인생샷|명당|일루미|은행나무|철길|대나무숲|라벤더|팀랩|인스타|도리이|벚꽃|단풍|야경/, []],
+  ['drink', /이자카야|선술집|술집|혼술|맥주|사케|위스키|하이볼|야키토리|꼬치구이|야타이|포장마차|골든가이|요코초|바 거리/, ['izakaya']],
+];
+
+// 규칙만으로 부족한 대표 장소 보강 (id → 취향)
+const THEME_EXTRA = {
+  // 도쿄
+  sensoji: ['history', 'photo'], teamlab: ['photo'], disneyland: ['theme', 'photo'], disneysea: ['theme', 'photo'],
+  harajuku: ['shopping', 'cafe', 'photo'], shimokita: ['shopping', 'cafe'], goldengai: ['drink', 'night'],
+  akiba: ['anime', 'shopping'], ikebukuro: ['anime', 'shopping'], nakameguro: ['cafe', 'photo', 'nature'],
+  skytree: ['night', 'shopping'], tokyotower: ['night', 'photo'], shibuyasky: ['night', 'photo'],
+  ginza: ['shopping'], mori: ['night', 'photo'], hakone: ['onsen', 'nature'], kamakura: ['history', 'nature', 'photo'],
+  tsukiji: ['food'], monja: ['food', 'drink'], yurakucho: ['drink', 'food'], crepe: ['cafe'],
+  // 오사카
+  dotonbori: ['food', 'night', 'photo', 'shopping'], usj: ['theme', 'anime'], osakajo: ['history', 'nature'],
+  umedasky: ['night', 'photo'], kaiyukan: ['nature'], shinsekai: ['food', 'drink'], amemura: ['shopping'],
+  nakazakicho: ['cafe', 'shopping'], kyoto: ['history', 'photo'], arashiyama: ['nature', 'history', 'photo'],
+  nara: ['history', 'nature'], arima: ['onsen'],
+  // 삿포로·후쿠오카 (규칙으로 못 잡는 곳)
+};
+
+// 이름으로 찾는 보강 (id를 모르는 알려진 가게·명소용)
+const THEME_BY_NAME = [
+  [/시로이 ?코이비토/, ['cafe', 'photo']], [/오타루/, ['history', 'photo', 'shopping']], [/니세코/, ['nature']],
+  [/포플러/, ['nature', 'photo']], [/야나가와/, ['history', 'nature']], [/페이페이 ?돔/, ['night']],
+];
+
+// 1인석·카운터 몇 자리 위주 (4명 이상 일행은 따로 앉거나 오래 기다림)
+const SMALL_SEATS = /1인석|칸막이|혼밥|혼술|카운터|오마카세|좁은 골목|좁은 가게|서서 먹는|입식/;
+
+// 성별·동행 경향 (가볍게만 반영: 취향을 직접 고르면 그쪽이 훨씬 크게 반영됨)
+const LEAN = {
+  w: { cafe: 0.4, photo: 0.4, shopping: 0.3 },
+  m: { food: 0.3, drink: 0.3, anime: 0.3 },
+  couple: { night: 0.6, photo: 0.5, cafe: 0.3 },
+  kids: { theme: 0.8, nature: 0.4, anime: 0.4 },
+  senior: { history: 0.4, onsen: 0.5, nature: 0.3 },
+  big: { food: 0.2, drink: 0.2 },
+};
+
+/* ---------- 직접 입력 해석 ---------- */
+const WHO_FEMALE = ['여자', '여성', '여자애', '딸', '엄마', '어머니', '어머님', '언니', '누나', '여동생', '할머니', '아내', '와이프', '여친', '여자친구', '장모', '시어머니', '이모', '고모'];
+const WHO_MALE = ['남자', '남성', '아들', '아빠', '아버지', '아버님', '형', '오빠', '남동생', '할아버지', '남편', '남친', '남자친구', '장인', '시아버지', '삼촌'];
+const WHO_FAMILY = ['가족', '부부', '부모', '부모님', '엄마', '어머니', '어머님', '아빠', '아버지', '아버님', '딸', '아들', '아이', '애기', '아기', '자녀', '남편', '아내', '와이프', '할머니', '할아버지', '조카', '시댁', '처가', '형제', '자매', '남매', '장모', '장인', '이모', '고모', '삼촌'];
+const WHO_COUPLE = ['커플', '연인', '애인', '남친', '여친', '남자친구', '여자친구', '신혼', '허니문', '데이트', '둘이서 데이트'];
+const WHO_KIDS = ['아이', '아기', '애기', '유아', '어린이', '초등', '유치원', '꼬마', '키즈'];
+const WHO_SOLO = ['혼자', '나 혼자', '혼행', '1인', '솔로'];
+const WHO_FRIEND = ['친구', '동기', '동창', '회사', '동료', '지인', '모임', '학교'];
+// 나이를 대신하는 말 (대략 나이)
+const WHO_AGE_WORDS = [
+  [/아기|유아|애기/, 3], [/유치원/, 6], [/초등/, 10], [/중학생|중딩/, 14], [/고등학생|고딩/, 17],
+  [/대학생|대딩/, 22], [/부모님|어머니|아버지|어머님|아버님/, 57], [/할머니|할아버지/, 75],
+];
+const KOR_COUNT = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 아홉: 9, 열: 10 };
+const GROUP_WORDS = [[/둘이서|둘이|2인/, 2], [/셋이서|셋이|3인/, 3], [/넷이서|넷이|4인/, 4], [/다섯이서|5인/, 5]];
+
+function has(text, words) { return words.some(function (w) { return text.indexOf(w) !== -1; }); }
+
+function parseTravelers(raw) {
+  var text = String(raw || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  var out = { text: String(raw || '').trim(), ages: [], female: 0, male: 0, count: 0, with: null, couple: false, kids: false, tastes: [] };
+  if (!text) return out;
+
+  // 사람 단위로 나눈다: "20대 여자 2명, 50대 엄마랑 7살 아이" → 3조각
+  var parts = text.split(/,|，|、|\/|\+|&|\n|그리고|이랑|랑 |랑$|하고 |와 함께|과 함께|및/).map(function (s) { return s.trim(); }).filter(Boolean);
+  var total = 0;
+  var sawSelf = false;
+  parts.forEach(function (seg) {
+    var ages = [];
+    var m;
+    var ageRe = /(\d{1,2})\s*(?:살|세)/g;
+    while ((m = ageRe.exec(seg))) ages.push(Number(m[1]));
+    var decRe = /(\d)0\s*대\s*(초반|중반|후반)?/g;
+    while ((m = decRe.exec(seg))) ages.push(Number(m[1]) * 10 + (m[2] === '초반' ? 2 : m[2] === '후반' ? 8 : 5));
+    if (!ages.length) WHO_AGE_WORDS.forEach(function (w) { if (!ages.length && w[0].test(seg)) ages.push(w[1]); });
+
+    var n = 0;
+    var cm = /(\d{1,2})\s*명/.exec(seg);
+    if (cm) n = Number(cm[1]);
+    else {
+      var km = /(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*명/.exec(seg);
+      if (km) n = KOR_COUNT[km[1]];
+      else GROUP_WORDS.forEach(function (g) { if (!n && g[0].test(seg)) n = g[1]; });
+    }
+    var isSelf = /(^|\s)(나|저|본인)(\s|$|는|도)/.test(seg);
+    var female = has(seg, WHO_FEMALE);
+    var male = !female && has(seg, WHO_MALE);
+    if (/부모님|부부/.test(seg) && !n) { n = 2; out.female += 1; out.male += 1; }
+    var person = n || ages.length || female || male || isSelf || has(seg, WHO_KIDS) || has(seg, WHO_FRIEND);
+    if (!person) return;
+    if (!n) n = Math.max(1, ages.length);
+    if (isSelf) sawSelf = true;
+    total += n;
+    if (female) out.female += n;
+    if (male) out.male += n;
+    ages.forEach(function (a) { out.ages.push(a); });
+    // 나이 하나에 여러 명이면 그 나이로 채운다 ("25살 여자 3명")
+    for (var k = ages.length; k < n && ages.length === 1; k++) out.ages.push(ages[0]);
+  });
+
+  // "나랑 친구 2명"처럼 자기 자신을 따로 적지 않았는데 친구만 적었으면 본인 1명을 더한다
+  var noLover = text.replace(/여자\s*친구|남자\s*친구/g, '');
+  if (!sawSelf && /친구/.test(noLover) && !/친구\s*(?:\d+|한|두|세|네|다섯)\s*명(?:이서|끼리)/.test(text) && /(친구\s*(?:\d+|한|두|세|네|다섯)\s*명)|(친구랑|친구와|친구하고)/.test(noLover)) total += 1;
+
+  // "둘이서·셋이" 같은 말은 전체 인원이다
+  var whole = 0;
+  GROUP_WORDS.forEach(function (g) { if (!whole && g[0].test(text)) whole = g[1]; });
+  out.count = whole || total;
+  out.couple = has(text, WHO_COUPLE);
+  out.kids = has(text, WHO_KIDS) || out.ages.some(function (a) { return a < 13; });
+  var family = has(text, WHO_FAMILY);
+  if (has(text, WHO_SOLO) || (total === 1 && !family && !out.couple)) out.with = 's';
+  else if (family) out.with = 'a';
+  else if (out.couple || total > 1 || has(text, WHO_FRIEND)) out.with = 'f';
+  // 커플은 두 명 (커플 두 쌍처럼 '쌍'을 적으면 그 수대로)
+  if (out.couple && !family) {
+    var pairs = /(\d|한|두|세|네)\s*쌍/.exec(text);
+    out.count = pairs ? 2 * (Number(pairs[1]) || KOR_COUNT[pairs[1]]) : 2;
+  }
+  if (out.with === 's' && !out.count) out.count = 1;
+
+  Object.keys(TASTE_WORDS).forEach(function (id) {
+    if (has(text, TASTE_WORDS[id])) out.tastes.push(id);
+  });
+  return out;
+}
+
+// 나이 목록 → 연령대 키 ('1'~'5'). 아이는 빼고 어른 평균으로, 어른이 없으면 가장 많은 나이로
+function ageKeyOf(ages) {
+  if (!ages || !ages.length) return null;
+  var adults = ages.filter(function (a) { return a >= 13; });
+  var list = adults.length ? adults : ages;
+  var avg = list.reduce(function (s, a) { return s + a; }, 0) / list.length;
+  if (avg < 20) return '1';
+  if (avg < 30) return '2';
+  if (avg < 40) return '3';
+  if (avg < 50) return '4';
+  return '5';
+}
+
+;
 /* ===== planner.js ===== */
 /*
  * 여행 일정 · 추천 엔진
@@ -2260,7 +2455,7 @@ if (typeof RESERVATIONS !== 'undefined') {
   var FAR_NOTICE = '먼 거리 일정이 포함되어 있습니다. 1박 일정은 어떠세요?';
 
   function data(name) {
-    /* global CITIES, PLACES, PLACE_SEASONS, CITY_EVENTS, MONTH_TAGS, SEASON_NOTES, MONTH_NOTES, SEASON_OF_MONTH, SEASON_LABEL, Travel, KNOWN_SPOTS, CATEGORY_WORDS, PLACE_TAGS, AIRPORT_ACCESS, RESERVATIONS */
+    /* global THEME_BY_NAME, THEME_RULES, THEME_EXTRA, SMALL_SEATS, LEAN, CITIES, PLACES, PLACE_SEASONS, CITY_EVENTS, MONTH_TAGS, SEASON_NOTES, MONTH_NOTES, SEASON_OF_MONTH, SEASON_LABEL, Travel, KNOWN_SPOTS, CATEGORY_WORDS, PLACE_TAGS, AIRPORT_ACCESS, RESERVATIONS */
     try {
       switch (name) {
         case 'CITIES': return typeof CITIES !== 'undefined' ? CITIES : root.CITIES;
@@ -2278,6 +2473,11 @@ if (typeof RESERVATIONS !== 'undefined') {
         case 'PLACE_TAGS': return typeof PLACE_TAGS !== 'undefined' ? PLACE_TAGS : root.PLACE_TAGS;
         case 'AIRPORT_ACCESS': return typeof AIRPORT_ACCESS !== 'undefined' ? AIRPORT_ACCESS : root.AIRPORT_ACCESS;
         case 'RESERVATIONS': return typeof RESERVATIONS !== 'undefined' ? RESERVATIONS : root.RESERVATIONS;
+        case 'THEME_RULES': return typeof THEME_RULES !== 'undefined' ? THEME_RULES : root.THEME_RULES;
+        case 'THEME_BY_NAME': return typeof THEME_BY_NAME !== 'undefined' ? THEME_BY_NAME : root.THEME_BY_NAME;
+        case 'THEME_EXTRA': return typeof THEME_EXTRA !== 'undefined' ? THEME_EXTRA : root.THEME_EXTRA;
+        case 'SMALL_SEATS': return typeof SMALL_SEATS !== 'undefined' ? SMALL_SEATS : root.SMALL_SEATS;
+        case 'LEAN': return typeof LEAN !== 'undefined' ? LEAN : root.LEAN;
       }
     } catch (e) { /* 없으면 undefined */ }
     return undefined;
@@ -2563,6 +2763,92 @@ if (typeof RESERVATIONS !== 'undefined') {
     return poolCache[cityKey];
   }
 
+  // ---------- 취향 ----------
+  // 장소의 취향 분류: 이름·설명·지역·카테고리 규칙 + 보강 목록 (prefs.js)
+  var themeCache = {};
+  function placeThemes(p) {
+    if (!p) return [];
+    var key = (p.id || '') + '|' + (p.name || '');
+    if (themeCache[key]) return themeCache[key];
+    var rules = data('THEME_RULES') || [];
+    var extra = (data('THEME_EXTRA') || {})[p.id] || [];
+    var tagMap = data('PLACE_TAGS') || {};
+    var tags = (p.tags || []).slice();
+    Object.keys(tagMap).forEach(function (c) { var t = tagMap[c][p.id]; if (t && t.tags) tags = tags.concat(t.tags); });
+    var text = [p.name, p.desc, p.area].join(' ');
+    var out = [];
+    function add(id) { if (out.indexOf(id) === -1) out.push(id); }
+    if (p.t === 'food') add('food');
+    if (p.t === 'sight' && p.slot === 'night') add('night');
+    rules.forEach(function (r) {
+      if (r[1].test(text) || (r[2] || []).some(function (t) { return tags.indexOf(t) !== -1; })) add(r[0]);
+    });
+    extra.forEach(add);
+    (data('THEME_BY_NAME') || []).forEach(function (r) { if (r[0].test(p.name || '')) r[1].forEach(add); });
+    // 테마파크는 이름으로만 (설명에 '디즈니와 가까운' 같은 말이 있어도 테마파크는 아님)
+    if (out.indexOf('theme') !== -1 && !(rules.filter(function (r) { return r[0] === 'theme'; })[0] || [0, /$^/])[1].test(p.name || '') && extra.indexOf('theme') === -1) {
+      out.splice(out.indexOf('theme'), 1);
+    }
+    if (p.t !== 'sight' && out.indexOf('theme') !== -1) out.splice(out.indexOf('theme'), 1);
+    themeCache[key] = out;
+    return out;
+  }
+
+  // 화면에서 넘어온 여행자 정보 정리: { age, with, tastes[], female, male, count, couple, kids, senior }
+  function normPrefs(prefs) {
+    if (!prefs || typeof prefs !== 'object') return null;
+    var tastes = Array.isArray(prefs.tastes) ? prefs.tastes.filter(Boolean) : [];
+    var count = Number(prefs.count) || 0;
+    var gender = prefs.gender || null;
+    return {
+      _n: true, tastes: tastes, gender: gender === 'w' || gender === 'm' ? gender : null,
+      count: count, couple: !!prefs.couple, kids: !!prefs.kids,
+      senior: !!prefs.senior || String(prefs.age || '') === '5',
+      minor: String(prefs.age || '') === '1',
+    };
+  }
+
+  function isThemePark(p) { return !!p && p.full && placeThemes(p).indexOf('theme') !== -1; }
+  // 테마파크를 하루 통째로 자동으로 넣어도 되는지: 테마파크를 골랐거나 아이와 함께일 때만
+  function themeParkWanted(pf) { return !pf || pf.kids || pf.tastes.indexOf('theme') !== -1; }
+
+  // 취향·일행에 따른 가산점 (0 근처: 보통, 클수록 먼저)
+  function prefBoost(p, prefs) {
+    var pf = prefs && prefs._n ? prefs : normPrefs(prefs);
+    if (!pf || !p) return 0;
+    var th = placeThemes(p);
+    var L = data('LEAN') || {};
+    var b = 0;
+    var hit = pf.tastes.filter(function (t) { return th.indexOf(t) !== -1; }).length;
+    b += 1.5 * Math.min(2, hit);
+    if (pf.tastes.length && !hit && p.t !== 'stay') b -= 0.5;
+    function lean(key, cap) {
+      var m = L[key] || {};
+      var s = 0;
+      th.forEach(function (t) { s += m[t] || 0; });
+      b += Math.min(cap, s);
+    }
+    if (pf.gender) lean(pf.gender, 0.6);
+    if (pf.couple) lean('couple', 0.8);
+    if (pf.kids) lean('kids', 1);
+    if (pf.senior) lean('senior', 0.6);
+    if (pf.count >= 4) lean('big', 0.3);
+    var small = data('SMALL_SEATS');
+    var tiny = small && small.test([p.name, p.desc].join(' '));
+    if (tiny && pf.count >= 4) b -= 1;
+    if (tiny && pf.count === 1) b += 0.3;
+    // 술집 위주 장소: 미성년(일본 음주 20세~)·아이 동반이면 뒤로
+    if (th.indexOf('drink') !== -1 && (pf.minor || pf.kids) && p.t !== 'stay') b -= 3;
+    if (isThemePark(p) && !themeParkWanted(pf)) b -= 1;
+    return b;
+  }
+
+  function tasteMatches(p, pf) {
+    if (!pf || !pf.tastes.length) return [];
+    var th = placeThemes(p);
+    return pf.tastes.filter(function (t) { return th.indexOf(t) !== -1; });
+  }
+
   function aliasesOf(p) {
     var out = [p.name, String(p.name || '').replace(/\(.*?\)/g, ''), p.q].concat(p.aliases || []);
     var inner = /\((.*?)\)/.exec(p.name || '');
@@ -2716,10 +3002,13 @@ if (typeof RESERVATIONS !== 'undefined') {
   }
 
   // ---------- 추천 ----------
-  function recommend(cityKey, age, withKey, months) {
+  function recommend(cityKey, age, withKey, months, prefs) {
     var PL = data('PLACES') || {};
     var list = PL[cityKey] || [];
+    var pf = normPrefs(prefs);
+    if (pf) { pf.senior = pf.senior || String(age) === '5'; pf.minor = pf.minor || String(age) === '1'; }
     age = String(age || '');
+    if (age === '5') age = '4'; // 50대 이상은 40대 데이터로
     withKey = String(withKey || '');
     months = normMonths(months);
     var seasonal = months.length > 0;
@@ -2745,6 +3034,7 @@ if (typeof RESERVATIONS !== 'undefined') {
       if (info && info.hidden) return; // 시즌이 아닌 기간 한정 장소
       var extra = { fit: fit };
       if (info) extra.season = { score: info.score, why: info.why };
+      if (pf) { extra.boost = prefBoost(p, pf); extra.match = tasteMatches(p, pf); }
       var item = copy(p, extra);
       if (info && info.score <= -2) { offSeason.push(item); return; }
       g[tier].push(item);
@@ -2752,10 +3042,10 @@ if (typeof RESERVATIONS !== 'undefined') {
 
     var TIER_BASE = [4, 3.5, 1];
     function order(g) {
-      if (!seasonal) return g[0].concat(g[1], g[2]);
+      if (!seasonal && !pf) return g[0].concat(g[1], g[2]);
       var all = [];
       g.forEach(function (arr, tier) {
-        arr.forEach(function (p) { all.push({ p: p, k: TIER_BASE[tier] + (p.season ? p.season.score : 0), i: all.length }); });
+        arr.forEach(function (p) { all.push({ p: p, k: TIER_BASE[tier] + (p.season ? p.season.score : 0) + (p.boost || 0), i: all.length }); });
       });
       all.sort(function (a, b) { return b.k - a.k || a.i - b.i; });
       return all.map(function (x) { return x.p; });
@@ -3033,7 +3323,12 @@ if (typeof RESERVATIONS !== 'undefined') {
       });
       requests.forEach(function (r) { r.candidates = (r.candidates || []).filter(function (f) { return !excluded[f.id]; }); });
     }
-    var fullItems = sights.filter(function (p) { return p.full; });
+    var prefs = normPrefs(opts.prefs);
+    function boostOf(p) { return prefs ? prefBoost(p, prefs) : 0; }
+    // 술집 위주 장소는 미성년·아이 동반 일정에 자동으로 넣지 않는다 (직접 적은 곳은 그대로)
+    function blocked(p) { return !!prefs && (prefs.kids || prefs.minor) && placeThemes(p).indexOf('drink') !== -1; }
+    // 추천 모드: 테마파크는 테마파크를 골랐거나 아이와 함께일 때만 하루 통째로 넣는다
+    var fullItems = sights.filter(function (p) { return p.full && (strict || !isThemePark(p) || themeParkWanted(prefs)); });
     var normal = sights.filter(function (p) { return !p.full; });
 
     // 2) 하루 통째 일정 (테마파크·근교)
@@ -3226,13 +3521,13 @@ if (typeof RESERVATIONS !== 'undefined') {
       var bestCost = Infinity;
       var hasNight = d.items.some(function (it) { return it.slot === 'night'; });
       pool.forEach(function (p) {
-        if (taken[p.id]) return;
+        if (taken[p.id] || blocked(p)) return;
         // 야경은 하루 한 곳까지 (저녁 뒤로 몰리면 시간창을 넘친다)
         if (p.slot === 'night' && (d.end < 20 || hasNight)) return;
         var l = legH(from, p);
         if (hop && l > hop) return;
         if (durOf(p) + l > room) return;
-        var cost = l - 0.25 * sScore(p);
+        var cost = l - 0.25 * sScore(p) - 0.12 * boostOf(p);
         if (cost < bestCost) { bestCost = cost; best = p; }
       });
       return best;
@@ -3365,7 +3660,7 @@ if (typeof RESERVATIONS !== 'undefined') {
 
     // 빈 식사 자리에는 예약 필수인 곳(오마카세 등)을 넣지 않는다 (예약 없이 가면 못 들어가서)
     var extra = (opts.extraFoods || []).filter(function (f) {
-      if (!f || usedFoodIds[f.id] || excluded[f.id]) return false;
+      if (!f || usedFoodIds[f.id] || excluded[f.id] || blocked(f)) return false;
       var rv = reservationOf(cityKey, f.id);
       return !(rv && rv.level === 'required');
     });
@@ -3380,7 +3675,7 @@ if (typeof RESERVATIONS !== 'undefined') {
           extra.forEach(function (f) {
             if (usedFoodIds[f.id] || !mealAllowed(f, m)) return;
             if (mealSized && durOf(f) < 1) return;
-            var dd = fDist(f, c);
+            var dd = fDist(f, c) - 0.3 * boostOf(f);
             if (dd < pickD - 1e-9) { pickD = dd; pick = f; }
           });
         });
@@ -3775,6 +4070,9 @@ if (typeof RESERVATIONS !== 'undefined') {
 
   var Planner = {
     recommend: recommend,
+    placeThemes: placeThemes,
+    prefBoost: prefBoost,
+    isThemePark: isThemePark,
     buildItinerary: buildItinerary,
     mapSearchUrl: mapSearchUrl,
     tripMonths: tripMonths,
@@ -3880,6 +4178,7 @@ if (typeof RESERVATIONS !== 'undefined') {
   function saveMemory() {
     const m = {
       city: state.city, age: state.age, with: state.with, nights: state.nights,
+      whoWith: state.who.with, gender: state.who.gender, tastes: state.who.tastes.length ? state.who.tastes.slice() : null,
       month: state.monthPicked ? (state.month || 0) : null,
       formCity: state.form.city, formAirport: state.form.airport,
     };
@@ -3903,12 +4202,15 @@ if (typeof RESERVATIONS !== 'undefined') {
   }
   // concept: 'area' 한 동네에서 · 'days' 날짜별로 가고 싶은 곳. byDay[i] = i일차에 적은 곳들
   // concept: 'area' 하루에 한 동네씩 · 'roam' 많이 돌아다니기. dayAreas[i] = i일차 동네 id, byDay[i] = i일차에 적은 곳, must = 돌아다니기에서 꼭 갈 곳
+  // with: 's' 혼자 · 'f' 친구 · 'c' 연인 · 'a' 가족 (추천 데이터에서 연인은 친구와 같게 보고 분위기만 더한다)
+  function freshWho() { return { age: null, with: null, gender: null, count: null, kids: false, tastes: [], manual: [], fromText: [], off: [], text: '' }; }
   function freshPicks(city) { return { city, concept: null, dayAreas: [], byDay: [], must: [], focusDay: 0 }; }
   function freshState() {
     return {
       path: null,      // 'A' 미정 | 'B' 정함
       plan: null,      // B 경로: 'yes' 가고 싶은 곳 있음 | 'no' 추천
       city: null, age: null, with: null, nights: null,
+      who: freshWho(), // 여행자 화면: 연령대·동행·성별·인원·취향·직접 입력
       month: null,        // A 경로 여행 달 (1~12) | null = 아직 몰라요
       monthPicked: false, // 시기 화면에서 한 번이라도 골랐는지 ('아직 몰라요' 포함)
       form: freshForm(),
@@ -3922,14 +4224,14 @@ if (typeof RESERVATIONS !== 'undefined') {
 
   /* ---------- 경로(단계) 정의 ---------- */
   function steps() {
-    if (state.path === 'A') return [['city', '도시'], ['month', '시기'], ['age', '연령대'], ['with', '동반'], ['nights', '기간'], ['result', '추천']];
+    if (state.path === 'A') return [['city', '도시'], ['month', '시기'], ['who', '여행자·취향'], ['nights', '기간'], ['result', '추천']];
     if (state.path === 'B') {
       if (state.plan === 'yes') {
         const c = state.picks.concept;
-        return [['arrival', '도착 정보'], ['detail', '세부 계획'], ['concept', '여행 스타일'],
+        return [['arrival', '도착 정보'], ['detail', '세부 계획'], ['who', '여행자·취향'], ['concept', '여행 스타일'],
           c === 'area' ? ['days', '날짜별 동네'] : c === 'roam' ? ['roam', '꼭 갈 곳'] : ['_', '장소'], ['route', '동선']];
       }
-      if (state.plan === 'no') return [['arrival', '도착 정보'], ['detail', '세부 계획'], ['age', '연령대'], ['with', '동반'], ['result', '추천']];
+      if (state.plan === 'no') return [['arrival', '도착 정보'], ['detail', '세부 계획'], ['who', '여행자·취향'], ['result', '추천']];
       return [['arrival', '도착 정보'], ['detail', '세부 계획'], ['_', '고르기'], ['_', '결과']];
     }
     return [];
@@ -3937,12 +4239,11 @@ if (typeof RESERVATIONS !== 'undefined') {
   function nextOf(screen) {
     switch (screen) {
       case 'city': return 'month';
-      case 'month': return 'age';
-      case 'age': return 'with';
-      case 'with': return state.path === 'A' ? 'nights' : 'result';
+      case 'month': return 'who';
+      case 'who': return state.path === 'A' ? 'nights' : state.plan === 'yes' ? 'concept' : 'result';
       case 'nights': return 'result';
       case 'arrival': return 'detail';
-      case 'detail': return state.plan === 'yes' ? 'concept' : 'age';
+      case 'detail': return 'who';
       case 'concept': return state.picks.concept === 'area' ? 'days' : 'roam';
       case 'roam': return 'route';
       case 'days': return 'route';
@@ -4106,7 +4407,7 @@ if (typeof RESERVATIONS !== 'undefined') {
           '<button type="button" class="big" data-action="path" data-value="A">' +
             '<span class="big__num mono" aria-hidden="true">01</span>' +
             '<span class="big__title">아직 미정이에요</span>' +
-            '<span class="big__sub">도시부터 같이 골라요. 연령대·동행·기간만 알려 주세요.</span>' +
+            '<span class="big__sub">도시부터 같이 골라요. 누구와 어떤 여행을 원하는지만 알려 주세요.</span>' +
           '</button>' +
           '<button type="button" class="big" data-action="path" data-value="B">' +
             '<span class="big__num mono" aria-hidden="true">02</span>' +
@@ -4163,22 +4464,7 @@ if (typeof RESERVATIONS !== 'undefined') {
         '</button>';
     },
 
-    age() {
-      return heading('연령대를 알려 주세요', '비슷한 나이대 여행자들이 만족한 곳을 먼저 보여 드려요.') +
-        '<div class="choices choices--grid">' + ['1', '2', '3', '4'].map((a) => choiceRow('age', a, AGE_LABEL[a], null)).join('') + '</div>';
-    },
-
-    with() {
-      const minor = state.age === '1';
-      const subs = { s: '혼밥·1인석, 대욕장 있는 호텔 위주', f: '먹방·야경·사진 명소 위주', a: '테마파크·수족관, 이동 짧은 동선' };
-      return heading('누구와 가세요?', null) +
-        '<div class="choices">' +
-          choiceRow('with', 's', '혼자', subs.s, minor ? { describedby: 'minor-note' } : null) +
-          (minor ? '<p class="notice notice--inline" id="minor-note"><strong>미성년자 혼자 여행이라면</strong> 미성년자는 숙소 체크인 때 보호자 동의서가 필요한 경우가 많아요. 예약 전에 숙소에 꼭 확인하세요.</p>' : '') +
-          choiceRow('with', 'f', '친구와', subs.f) +
-          choiceRow('with', 'a', '가족과', subs.a) +
-        '</div>';
-    },
+    who() { return whoScreen(); },
 
     nights() {
       return heading('여행 기간은요?', '날짜가 정해지지 않았다면 대략적인 길이만 골라 주세요.') +
@@ -4230,7 +4516,7 @@ if (typeof RESERVATIONS !== 'undefined') {
           '</button>' +
           '<button type="button" class="big" data-action="plan" data-value="no">' +
             '<span class="big__title">아니요, 추천해 주세요</span>' +
-            '<span class="big__sub">연령대와 동행만 알려 주시면 일정까지 짜 드려요.</span>' +
+            '<span class="big__sub">누구와 어떤 여행을 원하는지 알려 주시면 일정까지 짜 드려요.</span>' +
           '</button>' +
         '</div>';
     },
@@ -4292,6 +4578,7 @@ if (typeof RESERVATIONS !== 'undefined') {
         if (si && (si.hidden || si.score <= -2)) return;
         (byArea[x.area] = byArea[x.area] || []).push(x);
       });
+      Object.keys(byArea).forEach((k) => { byArea[k] = byArea[k].map((x, i) => ({ x, k: boostOf(x), i })).sort((a, b) => b.k - a.k || a.i - b.i).map((o) => o.x); });
       const areas = dayAreaList(city);
       const dayBox = (i) => {
         const date = addDays(state.form.arrDate, i);
@@ -4319,7 +4606,7 @@ if (typeof RESERVATIONS !== 'undefined') {
           '<details class="suggest"><summary>어디 갈지 모르겠다면 · 동네별 인기 장소</summary>' +
             '<p class="hint" id="suggest-target">누르면 <strong>' + (pk.focusDay + 1) + '일차</strong>에 넣어요. 다른 날에 넣으려면 그날 칸을 먼저 눌러 주세요.</p>' +
             Object.keys(byArea).map((ar) => '<div class="suggest__group"><p class="suggest__area">' + esc(ar) + '</p><div class="suggest__list">' +
-              byArea[ar].map((x) => '<button type="button" class="suggest__item" data-action="day-suggest" data-name="' + esc(x.name) + '">' + esc(x.name) + (x.full ? ' <span class="tag tag--full">하루 코스</span>' : '') + '</button>').join('') +
+              byArea[ar].map((x) => '<button type="button" class="suggest__item" data-action="day-suggest" data-name="' + esc(x.name) + '">' + esc(x.name) + (x.full ? ' <span class="tag tag--full">하루 코스</span>' : '') + (boostOf(x) >= 1.5 ? ' <span class="tag tag--taste">취향</span>' : '') + '</button>').join('') +
             '</div></div>').join('') +
           '</details>' +
           '<p class="stay-note">숙소 기준: <strong>' + (formStay() ? esc(formStay().name) : '시내 중심') + '</strong> <span class="muted">(도착 정보 화면에서 바꿀 수 있어요)</span></p>' +
@@ -4339,8 +4626,173 @@ if (typeof RESERVATIONS !== 'undefined') {
       f.addEventListener('submit', (e) => { e.preventDefault(); submitArrival(); });
     },
     days() { bindDayForm('days-form'); },
+    who() { bindWhoForm(); },
     roam() { bindDayForm('roam-form'); },
   };
+
+  /* ---------- 여행자·취향 ----------
+   * 연령대·동행·성별·인원·취향을 한 화면에서 고른다. 맨 아래 칸에 "25살 여자 3명"처럼 적으면
+   * 알아들은 만큼 위 선택을 채운다 (prefs.js parseTravelers). 위에서 다시 고르면 그 선택이 이긴다. */
+  const WHO_AGES = ['1', '2', '3', '4', '5'];
+  const WHO_WITH = [['s', '혼자'], ['f', '친구'], ['c', '연인'], ['a', '가족']];
+  const WHO_GENDER = [['w', '여자'], ['m', '남자'], ['x', '섞여 있어요']];
+  const WHO_WITH_LABEL = { s: '혼자', f: '친구와', c: '연인과', a: '가족과' };
+  const tasteList = () => (typeof TASTES !== 'undefined' ? TASTES : []);
+  const tasteLabel = (id) => { const t = tasteList().find((x) => x.id === id); return t ? t.label : id; };
+
+  function pill(type, name, value, label, checked, extra) {
+    return '<label class="pill"><input type="' + type + '" name="' + name + '" value="' + esc(value) + '"' + (checked ? ' checked' : '') + (extra || '') + '>' +
+      '<span class="pill__box">' + esc(label) + '</span></label>';
+  }
+  function whoCount(w) {
+    if (w.count) return w.count;
+    return w.with === 's' ? 1 : w.with === 'c' ? 2 : 0;
+  }
+  function whoText(w) {
+    w = w || state.who;
+    const bits = [];
+    if (w.age) bits.push(AGE_LABEL[w.age]);
+    const n = whoCount(w);
+    const g = w.gender === 'w' ? '여자' : w.gender === 'm' ? '남자' : w.gender === 'x' ? '남녀' : '';
+    if (g || n > 1) bits.push((g || '') + (n > 1 ? (g ? ' ' : '') + n + '명' : ''));
+    if (w.with) bits.push(WHO_WITH_LABEL[w.with]);
+    if (w.kids) bits.push('아이 동반');
+    return bits.join(' · ');
+  }
+  function tastesText(w) {
+    w = w || state.who;
+    return w.tastes.length ? w.tastes.map(tasteLabel).join(' · ') : '상관없어요';
+  }
+  // 엔진에 넘길 여행자 정보
+  function prefsOf() {
+    const w = state.who;
+    return {
+      age: w.age, tastes: w.tastes.slice(), gender: w.gender === 'x' ? null : w.gender,
+      count: whoCount(w), couple: w.with === 'c', kids: !!w.kids,
+    };
+  }
+  const boostOf = (x) => { try { return Planner.prefBoost ? Planner.prefBoost(x, prefsOf()) : 0; } catch (e) { return 0; } };
+
+  function whoScreen() {
+    const w = state.who;
+    const minor = w.age === '1' && w.with === 's';
+    const lastT = Array.isArray(memory.tastes) ? memory.tastes : [];
+    return heading('누가, 어떤 여행을 하나요?', '고른 만큼 비슷한 여행자들이 만족한 곳을 먼저 넣어요. 맨 아래 칸에 적으면 위 선택을 알아서 채워요.') +
+      '<form class="form" id="who-form" novalidate>' +
+        '<div class="notice notice--error" id="who-error" role="alert" hidden></div>' +
+        '<fieldset class="field"><legend class="field__label">연령대</legend>' +
+          '<div class="pills">' + WHO_AGES.map((a) => pill('radio', 'who-age', a, AGE_LABEL[a], w.age === a)).join('') + '</div></fieldset>' +
+        '<fieldset class="field"><legend class="field__label">누구와</legend>' +
+          '<div class="pills">' + WHO_WITH.map((x) => pill('radio', 'who-with', x[0], x[1], w.with === x[0])).join('') +
+            pill('checkbox', 'who-kids', '1', '아이(12세 이하)도 가요', w.kids) + '</div>' +
+          '<p class="notice notice--inline" id="minor-note"' + (minor ? '' : ' hidden') + '><strong>미성년자 혼자 여행이라면</strong> 숙소 체크인 때 보호자 동의서가 필요한 경우가 많아요. 예약 전에 숙소에 꼭 확인하세요.</p>' +
+        '</fieldset>' +
+        '<fieldset class="field"><legend class="field__label">성별 <span class="muted">(선택)</span></legend>' +
+          '<div class="pills">' + WHO_GENDER.map((x) => pill('radio', 'who-gender', x[0], x[1], w.gender === x[0])).join('') + '</div></fieldset>' +
+        '<div class="field"><label class="field__label" for="who-count">인원 <span class="muted">(선택)</span></label>' +
+          '<input class="input input--short mono" type="number" id="who-count" min="1" max="30" inputmode="numeric" value="' + (w.count || '') + '" placeholder="명"></div>' +
+        '<fieldset class="field"><legend class="field__label">여행 취향 <span class="muted">(여러 개 · 안 고르면 골고루)</span></legend>' +
+          '<div class="pills">' + tasteList().map((t) => pill('checkbox', 'who-taste', t.id, t.label, w.tastes.includes(t.id))).join('') + '</div>' +
+          '<p class="hint">테마파크(디즈니·USJ)는 테마파크를 고르거나 아이와 함께일 때만 하루 일정으로 넣어요.' +
+            (lastT.length && !w.tastes.length ? ' 지난번: ' + esc(lastT.map(tasteLabel).join(', ')) : '') + '</p></fieldset>' +
+        '<div class="field who-free"><label class="field__label" for="who-text">직접 입력 <span class="muted">(선택)</span></label>' +
+          '<textarea class="input" id="who-text" rows="2" maxlength="200" placeholder="예: 25살 여자 3명, 카페랑 사진 좋아해요&#10;예: 50대 엄마랑 7살 아이 / 30대 남자 5명 술 좋아함">' + esc(w.text) + '</textarea>' +
+          '<p class="hint" id="who-parsed" aria-live="polite">' + parsedLine() + '</p></div>' +
+        '<div class="actions actions--sticky"><button type="submit" class="btn">다음</button></div>' +
+      '</form>';
+  }
+  function parsedLine() {
+    const t = whoText();
+    return t ? '지금 기준: <strong>' + esc(t) + '</strong> · 취향 ' + esc(tastesText()) : '연령대와 누구와 가는지 고르거나, 위 칸에 적어 주세요.';
+  }
+  function syncWhoInputs() {
+    const w = state.who;
+    const f = document.getElementById('who-form');
+    if (!f) return;
+    f.querySelectorAll('input[name="who-age"]').forEach((el) => { el.checked = el.value === w.age; });
+    f.querySelectorAll('input[name="who-with"]').forEach((el) => { el.checked = el.value === w.with; });
+    f.querySelectorAll('input[name="who-gender"]').forEach((el) => { el.checked = el.value === w.gender; });
+    f.querySelectorAll('input[name="who-taste"]').forEach((el) => { el.checked = w.tastes.includes(el.value); });
+    f.querySelector('input[name="who-kids"]').checked = !!w.kids;
+    const c = document.getElementById('who-count');
+    if (document.activeElement !== c) c.value = w.count || '';
+    document.getElementById('minor-note').hidden = !(w.age === '1' && w.with === 's');
+    document.getElementById('who-parsed').innerHTML = parsedLine();
+  }
+  // 직접 입력 → 알아들은 것만 덮어쓴다. 취향 = (직접 누른 것 ∪ 글에서 나온 것) − 직접 끈 것
+  function mergeTastes(w) {
+    const out = [];
+    w.manual.concat(w.fromText).forEach((t) => { if (!out.includes(t) && !w.off.includes(t)) out.push(t); });
+    w.tastes = out;
+  }
+  function applyWhoText(text) {
+    const w = state.who;
+    w.text = text;
+    if (typeof parseTravelers !== 'function') return;
+    const r = parseTravelers(text);
+    const age = typeof ageKeyOf === 'function' ? ageKeyOf(r.ages) : null;
+    if (age) w.age = age;
+    if (r.with) w.with = r.couple && r.with === 'f' ? 'c' : r.with;
+    if (r.female && r.male) w.gender = 'x';
+    else if (r.female) w.gender = 'w';
+    else if (r.male) w.gender = 'm';
+    if (r.count) w.count = r.count;
+    if (r.kids) w.kids = true;
+    w.fromText = r.tastes.slice();
+    mergeTastes(w);
+  }
+  function bindWhoForm() {
+    const f = document.getElementById('who-form');
+    const w = state.who;
+    f.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el.name === 'who-age') w.age = el.value;
+      else if (el.name === 'who-with') {
+        w.with = el.value;
+        if (w.with === 's') w.count = 1;
+        else if (w.with === 'c' && (!w.count || w.count === 1)) w.count = 2;
+        else if (w.count === 1) w.count = null;
+      } else if (el.name === 'who-gender') w.gender = el.value;
+      else if (el.name === 'who-kids') { w.kids = el.checked; if (el.checked && !w.with) w.with = 'a'; }
+      else if (el.name === 'who-taste') {
+        const t = el.value;
+        w.manual = w.manual.filter((x) => x !== t);
+        w.off = w.off.filter((x) => x !== t);
+        if (el.checked) w.manual.push(t); else w.off.push(t);
+        mergeTastes(w);
+      }
+      document.getElementById('who-error').hidden = true;
+      syncWhoInputs();
+    });
+    f.addEventListener('input', (e) => {
+      if (e.target.id === 'who-count') {
+        const n = Math.round(Number(e.target.value));
+        w.count = n >= 1 && n <= 30 ? n : null;
+        document.getElementById('who-parsed').innerHTML = parsedLine();
+      } else if (e.target.id === 'who-text') {
+        applyWhoText(e.target.value);
+        if (w.age && w.with) document.getElementById('who-error').hidden = true;
+        syncWhoInputs();
+      }
+    });
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const miss = [];
+      if (!w.age) miss.push('연령대');
+      if (!w.with) miss.push('누구와');
+      const box = document.getElementById('who-error');
+      if (miss.length) {
+        box.innerHTML = '<strong>' + esc(miss.join('와 ')) + '를 알려 주세요</strong> 위에서 고르거나 맨 아래 칸에 "25살 여자 3명"처럼 적어도 돼요.';
+        box.hidden = false;
+        box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        return;
+      }
+      state.age = w.age;
+      state.with = w.with === 'c' ? 'f' : w.with;
+      saveMemory();
+      go(nextOf('who'));
+    });
+  }
 
   /* ---------- 도착 정보 폼 ---------- */
   // 머무는 숙소: 지역(역 주변) 또는 목록의 숙소. 고르면 그곳을 기준으로 동선을 짠다.
@@ -4872,6 +5324,7 @@ if (typeof RESERVATIONS !== 'undefined') {
     return '<li class="place">' +
       '<a class="place__name" href="' + esc(mapUrl(p)) + '" target="_blank" rel="noopener">' + esc(p.name) + ' <span aria-hidden="true">↗</span><span class="sr-only">(구글 지도, 새 창)</span></a>' +
       (p.full ? ' <span class="tag tag--full">하루 코스</span>' : '') +
+      (p.match && p.match.length ? ' <span class="tag tag--taste">' + esc(p.match.map(tasteLabel).join('·')) + '</span>' : '') +
       seasonLine(p.season, 'p', 'place__season') +
       '<p class="place__meta"><span class="place__area">' + esc(p.area) + '</span> · ' + esc(p.desc) + '</p>' +
     '</li>';
@@ -5016,7 +5469,8 @@ if (typeof RESERVATIONS !== 'undefined') {
   function renderResult() {
     if (!plannerReady()) return missingPlanner();
     const p = tripParams();
-    const rec = Planner.recommend(p.city, state.age, state.with, p.months) || { sights: [], foods: [], stays: [] };
+    const prefs = prefsOf();
+    const rec = Planner.recommend(p.city, state.age, state.with, p.months, prefs) || { sights: [], foods: [], stays: [] };
     // 일정 기준 숙소: 도심 가까운 추천 숙소 (멀리 있는 온천 료칸은 기준으로 쓰지 않음)
     const stay = (state.path === 'B' && formStay()) || engine('pickBaseStay', [rec.stays || [], p.city], null);
     let it;
@@ -5024,7 +5478,7 @@ if (typeof RESERVATIONS !== 'undefined') {
       it = Planner.buildItinerary({
         city: p.city, sights: rec.sights || [], foods: [], extraFoods: rec.foods || [], stay,
         startDate: p.startDate, days: p.days, arriveTime: p.arriveTime, departTime: p.departTime,
-        airport: p.airport, custom: [], fillMode: 'recommend', months: p.months,
+        airport: p.airport, custom: [], fillMode: 'recommend', months: p.months, prefs,
         // 빈 시간은 이동 30분 안쪽의 명소로 채워 자유 시간이 2시간을 넘지 않게
         maxHop: 0.5, maxFree: 2,
         fillSights: (engine('spots', [p.city], PLACES[p.city] || []) || []).filter((x) => {
@@ -5037,8 +5491,8 @@ if (typeof RESERVATIONS !== 'undefined') {
       console.error(err);
       return errorBlock('일정을 짜는 중 문제가 생겼어요.', '기간이나 시간을 바꿔서 다시 시도해 주세요.');
     }
-    const tips = TIPS[state.with] || [];
-    return summaryHeader(p, [['연령', esc(AGE_LABEL[state.age])], ['동반', esc(WITH_LABEL[state.with])]]) +
+    const tips = (TIPS[state.with] || []).concat(state.who.with === 'c' ? ['커플이면 야경 전망대(시부야 스카이 등)는 일몰 시간대를 미리 예약하세요.'] : []);
+    return summaryHeader(p, [['여행자', esc(whoText())], ['취향', esc(tastesText())]]) +
       seasonSection(p) +
       (state.age === '1' && state.with === 's' ? '<p class="notice notice--inline">미성년자는 숙소 체크인 때 보호자 동의서가 필요한 경우가 많아요. 예약 전에 숙소에 꼭 확인하세요.</p>' : '') +
       (stay && p.days > 1 ? '<p class="stay-note">숙소 기준: <strong>' + esc(stay.name) + '</strong> <span class="muted">(' + esc(stay.area) + ')</span></p>' : '') +
@@ -5051,7 +5505,7 @@ if (typeof RESERVATIONS !== 'undefined') {
         placeList('추천 숙소', rec.stays, 'rec-stays') +
       '</div>' +
       offSeasonList(rec, p.months) +
-      (tips.length ? '<aside class="tips" aria-labelledby="tips-title"><h2 class="tips__title" id="tips-title">' + esc(WITH_LABEL[state.with]) + ' 여행 팁</h2><ul>' + tips.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul></aside>' : '') +
+      (tips.length ? '<aside class="tips" aria-labelledby="tips-title"><h2 class="tips__title" id="tips-title">' + esc(WHO_WITH_LABEL[state.who.with] || WITH_LABEL[state.with]) + ' 여행 팁</h2><ul>' + tips.map((t) => '<li>' + esc(t) + '</li>').join('') + '</ul></aside>' : '') +
       bookingSection(it) +
       resultActions();
   }
@@ -5077,7 +5531,7 @@ if (typeof RESERVATIONS !== 'undefined') {
     try {
       const common = {
         city: p.city, stay, startDate: p.startDate, days: p.days, arriveTime: p.arriveTime, departTime: p.departTime,
-        airport: p.airport, months: p.months, foods: [], extraFoods: fillFoods, fillMode: 'strict', maxFree: 2,
+        airport: p.airport, months: p.months, foods: [], extraFoods: fillFoods, fillMode: 'strict', maxFree: 2, prefs: prefsOf(),
       };
       it = Planner.buildItinerary(isArea
         // 하루에 한 동네: 그날 동네 안에서만. 적은 곳은 그날에, 빈 시간은 그 동네 명소로
@@ -5086,7 +5540,7 @@ if (typeof RESERVATIONS !== 'undefined') {
         : Object.assign(common, {
           sights: [], custom: pk.must.slice(), maxHop: 0.5,
           fillSights: spots.filter((x) => x.t !== 'food' && x.t !== 'stay' && okSeason(x))
-            .map((x, i) => ({ x, k: (info(x).score || 0), i })).sort((a, b) => b.k - a.k || a.i - b.i).map((o) => o.x),
+            .map((x, i) => ({ x, k: (info(x).score || 0) + boostOf(x), i })).sort((a, b) => b.k - a.k || a.i - b.i).map((o) => o.x),
         }));
     } catch (err) {
       console.error(err);
@@ -5096,6 +5550,7 @@ if (typeof RESERVATIONS !== 'undefined') {
     const leftDays = it.leftoverDays || {};
     const picked = isArea ? pk.byDay.reduce((n, l) => n + l.length, 0) : pk.must.length;
     return summaryHeader(p, [
+      ['여행자', esc(whoText())], ['취향', esc(tastesText())],
       ['여행 스타일', isArea ? '하루에 한 동네씩' : '많이 돌아다니기 · 이동 30분 이내'],
       isArea ? ['동네', dayAreas.map((a, i) => (i + 1) + '일 ' + esc(a ? a.name.split(' ')[0] : '-')).join(' · ')] : ['꼭 갈 곳', picked ? picked + '곳' : '없음 (전부 추천)'],
       ['숙소', stay ? esc(stay.name) : '미정']]) +
